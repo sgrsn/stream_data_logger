@@ -1,10 +1,19 @@
 <launch>
-  <node name="serial_stream_node" pkg="serial_stream" type="serial_stream_node">
-    <param name="serial_port" value="/dev/serial/by-id/usb-Teensyduino_USB_Serial_9076360-if00"/>
+  <node name="serial_stream_node" pkg="serial_stream" type="serial_stream_node" output="screen">
+    <param name="serial_port" value="/dev/spresense"/>
     <param name="baud_rate" value="115200"/>
-    <param name="data0_format" value="x: %lf"/>
-    <param name="data1_format" value="z: %lf"/>
-    <remap from="~data0" to="force_x"/>
-    <remap from="~data1" to="force_z"/>
+    <param name="data_count" value="6"/>
+    <param name="data0_format" value="ax: %lf"/>
+    <param name="data1_format" value="ay: %lf"/>
+    <param name="data2_format" value="az: %lf"/>
+    <param name="data3_format" value="gx: %lf"/>
+    <param name="data4_format" value="gy: %lf"/>
+    <param name="data5_format" value="gz: %lf"/>
+    <remap from="~data0" to="ax"/>
+    <remap from="~data1" to="ay"/>
+    <remap from="~data2" to="az"/>
+    <remap from="~data3" to="gx"/>
+    <remap from="~data4" to="gy"/>
+    <remap from="~data5" to="gz"/>
   </node>
 </launch>
