@@ -49,7 +49,7 @@ If you want to handle three sets of data (time, voltage and temperature), please
     <param name="serial_port" value="/dev/ttyUSB0"/>
     <param name="baud_rate" value="115200"/>
     <param name="data_count" value="3"/>
-    <param name="data0_format" value="time: %lf">
+    <param name="data0_format" value="time: %lf"/>
     <param name="data1_format" value="volt: %lf"/>
     <param name="data2_format" value="temp: %lf"/>
     <remap from="~data0" to="time"/>

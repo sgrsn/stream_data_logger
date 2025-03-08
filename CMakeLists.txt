@@ -6,6 +6,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
 )
 
+find_package(libserial)
 find_package(PkgConfig)
 pkg_check_modules(SERIAL libserial)
 
