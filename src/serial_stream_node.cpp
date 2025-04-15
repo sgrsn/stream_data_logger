@@ -32,6 +32,9 @@ private:
   // パブリッシャー
   ros::Publisher raw_data_pub_;
   vector<ros::Publisher> data_pubs_;
+  
+  // サブスクライバー（制御コマンド用）
+  ros::Subscriber speed_sub_;
 
 public:
   SerialStream serial_stream_;
@@ -43,6 +46,7 @@ public:
   {
     readParameters();
     setupPublishers();
+    setupSubscribers();
     setupSerialPort();
   }
   
@@ -115,6 +119,43 @@ private:
     {
       ros::Publisher data_pub = nh_.advertise<std_msgs::Float64>("data" + to_string(i), 1000);
       data_pubs_.push_back(data_pub);
+    }
+  }
+
+  /**
+   * サブスクライバーを設定
+   */
+  void setupSubscribers()
+  {
+    // スピード制御用のサブスクライバーを設定
+    speed_sub_ = nh_.subscribe("motor_speed", 10, &SerialToRosBridge::speedCallback, this);
+    
+    ROS_INFO("Subscribed to motor_speed topic");
+  }
+  
+  /**
+   * スピード制御コールバック関数
+   * @param msg 速度コマンドメッセージ
+   */
+  void speedCallback(const std_msgs::Float64::ConstPtr& msg)
+  {
+    int speed = static_cast<int>(msg->data);
+    
+    // 値の範囲を0-100に制限
+    speed = std::max(0, std::min(100, speed));
+    
+    // コマンド文字列を作成
+    std::stringstream cmd;
+    cmd << "speed: " << speed << "\r\n";
+    
+    ROS_INFO("Sending speed command: %s", cmd.str().c_str());
+    
+    // シリアルポートにコマンドを送信
+    try {
+      serial_stream_ << cmd.str();
+      serial_stream_.flush();
+    } catch (const std::exception &e) {
+      ROS_ERROR("Error sending speed command: %s", e.what());
     }
   }
 
