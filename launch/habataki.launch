@@ -6,4 +6,6 @@
     <param name="data0_format" value="freq: %lf"/>
     <remap from="~data0" to="frequency"/>
   </node>
+
+  <include file="$(find leptrino_force_torque)/launch/leptrino.launch" />
 </launch>
