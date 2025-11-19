@@ -1,27 +1,31 @@
-#include <ros/ros.h>
-#include <std_msgs/String.h>
-#include <std_msgs/Float64.h>
+#include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/float64.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <libserial/SerialStream.h>
+#include <chrono>
+#include <memory>
 #include <iostream>
 #include <unistd.h>
 #include <map>
 #include <vector>
 #include <regex>
 #include <sstream>
+#include <string>
 
 using namespace LibSerial;
-using namespace std;
+using namespace std::chrono_literals;
+using std::map;
+using std::string;
+using std::vector;
 
 /**
  * シリアル通信からROSトピックへのブリッジクラス
  */
-class SerialToRosBridge
+class SerialToRosBridge : public rclcpp::Node
 {
 private:
-  ros::NodeHandle nh_;
-
   // 設定パラメータ
-  std::string serial_port_;
+  string serial_port_;
   int baud_rate_;
   int data_count_;
 
@@ -30,8 +34,8 @@ private:
   vector<string> var_names_;
 
   // パブリッシャー
-  ros::Publisher raw_data_pub_;
-  vector<ros::Publisher> data_pubs_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr raw_data_pub_;
+  vector<rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr> data_pubs_;
 
 public:
   SerialStream serial_stream_;
@@ -39,7 +43,7 @@ public:
    * コンストラクタ
    * @param nh ROSノードハンドル
    */
-  SerialToRosBridge(ros::NodeHandle nh) : nh_(nh)
+  SerialToRosBridge() : rclcpp::Node("serial_to_ros")
   {
     readParameters();
     setupPublishers();
@@ -51,7 +55,10 @@ public:
    */
   ~SerialToRosBridge()
   {
-    serial_stream_.Close();
+    if (serial_stream_.IsOpen())
+    {
+      serial_stream_.Close();
+    }
   }
   
   /**
@@ -59,15 +66,17 @@ public:
    */
   void run()
   {
-    ros::Rate loop_rate(1000);
+    rclcpp::Rate loop_rate(1000.0);
 
-    while (ros::ok())
+    while (rclcpp::ok())
     {
       processSerialData();
 
-      ros::spinOnce();
+      rclcpp::spin_some(this->shared_from_this());
       loop_rate.sleep();
     }
+
+    serial_stream_.Close();
   }
 
 private:
@@ -77,30 +86,30 @@ private:
   void readParameters()
   {
     // シリアルポートとボーレートのパラメータ取得
-    nh_.param<std::string>("serial_port", serial_port_, "/dev/ttyUSB0");
-    nh_.param<int>("baud_rate", baud_rate_, 9600);
+    serial_port_ = this->declare_parameter<string>("serial_port", "/dev/ttyUSB0");
+    baud_rate_ = this->declare_parameter<int>("baud_rate", 9600);
 
     // データのフォーマット数を取得
-    nh_.param<int>("data_count", data_count_, 3); // デフォルトは3
+    data_count_ = this->declare_parameter<int>("data_count", 3); // デフォルトは3
+    data_formats_.clear();
+    var_names_.clear();
 
-    ROS_INFO("Configuring for %d data fields", data_count_);
+    RCLCPP_INFO(this->get_logger(), "Configuring for %d data fields", data_count_);
 
     // 各データのフォーマットを取得
     for (int i = 0; i < data_count_; i++)
     {
-      string param_name = "data" + to_string(i) + "_format";
-      string default_format = "data" + to_string(i) + ": %lf";
-      string format;
-
-      nh_.param<string>(param_name, format, default_format);
+      string param_name = "data" + std::to_string(i) + "_format";
+      string default_format = "data" + std::to_string(i) + ": %lf";
+      string format = this->declare_parameter<string>(param_name, default_format);
       data_formats_.push_back(format);
 
       // 変数名を抽出
       string var_name = extractVariableName(format);
       var_names_.push_back(var_name);
 
-      ROS_INFO("Field %d: format='%s', var_name='%s'",
-               i, format.c_str(), var_name.c_str());
+      RCLCPP_INFO(this->get_logger(), "Field %d: format='%s', var_name='%s'",
+                  i, format.c_str(), var_name.c_str());
     }
   }
 
@@ -109,11 +118,12 @@ private:
    */
   void setupPublishers()
   {
-    raw_data_pub_ = nh_.advertise<std_msgs::String>("serial_data", 1000);
+    raw_data_pub_ = this->create_publisher<std_msgs::msg::String>("~/serial_data", rclcpp::QoS(10));
 
     for (int i = 0; i < data_count_; i++)
     {
-      ros::Publisher data_pub = nh_.advertise<std_msgs::Float64>("data" + to_string(i), 1000);
+      string topic_name = "~/data" + std::to_string(i);
+      auto data_pub = this->create_publisher<std_msgs::msg::Float64>(topic_name, rclcpp::QoS(10));
       data_pubs_.push_back(data_pub);
     }
   }
@@ -132,17 +142,17 @@ private:
       serial_stream_.SetBaudRate(getBaudRateEnum(baud_rate_));
       serial_stream_.SetCharacterSize(CharacterSize::CHAR_SIZE_8);
 
-      ROS_INFO("Successfully opened serial port: %s with baud rate: %d",
-               serial_port_.c_str(), baud_rate_);
+      RCLCPP_INFO(this->get_logger(), "Successfully opened serial port: %s with baud rate: %d",
+                  serial_port_.c_str(), baud_rate_);
     }
     catch (const OpenFailed &)
     {
-      ROS_ERROR("Failed to open serial port: %s", serial_port_.c_str());
+      RCLCPP_ERROR(this->get_logger(), "Failed to open serial port: %s", serial_port_.c_str());
       throw std::runtime_error("Serial port did not open correctly");
     }
     catch (const std::exception &e)
     {
-      ROS_ERROR("Error setting up serial port: %s", e.what());
+      RCLCPP_ERROR(this->get_logger(), "Error setting up serial port: %s", e.what());
       throw;
     }
   }
@@ -152,6 +162,13 @@ private:
    */
   void processSerialData()
   {
+    if (!serial_stream_.IsOpen())
+    {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "Serial port is not open; skipping read attempt.");
+      return;
+    }
+
     std::string line;
 
     try
@@ -164,7 +181,7 @@ private:
         return;
       }
 
-      ROS_DEBUG("Received: %s", line.c_str());
+      RCLCPP_DEBUG(this->get_logger(), "Received: %s", line.c_str());
 
       // データ解析
       map<string, double> data_values = parseSerialData(line);
@@ -177,7 +194,7 @@ private:
     }
     catch (const std::exception &e)
     {
-      ROS_ERROR("Error processing serial data: %s", e.what());
+      RCLCPP_ERROR(this->get_logger(), "Error processing serial data: %s", e.what());
     }
   }
 
@@ -212,10 +229,10 @@ private:
         }
 
         string value_str = line.substr(value_start, value_end - value_start);
-        double value = stod(value_str);
+        double value = std::stod(value_str);
         data_values[var_name] = value;
 
-        ROS_DEBUG("Parsed: %s = %f", var_name.c_str(), value);
+        RCLCPP_DEBUG(this->get_logger(), "Parsed: %s = %f", var_name.c_str(), value);
       }
     }
 
@@ -233,7 +250,7 @@ private:
     {
       if (data_values.find(var_name) == data_values.end())
       {
-        ROS_DEBUG("Missing variable: %s", var_name.c_str());
+        RCLCPP_DEBUG(this->get_logger(), "Missing variable: %s", var_name.c_str());
         return false;
       }
     }
@@ -247,7 +264,7 @@ private:
   void publishData(const map<string, double> &data_values)
   {
     // メッセージの作成
-    std_msgs::String msg;
+    std_msgs::msg::String msg;
     std::stringstream ss;
     vector<double> values;
 
@@ -263,17 +280,17 @@ private:
     msg.data = ss.str();
 
     // 全データを含むメッセージをパブリッシュ
-    raw_data_pub_.publish(msg);
+    raw_data_pub_->publish(msg);
 
     // 各値を個別にパブリッシュ
     for (size_t i = 0; i < values.size(); i++)
     {
-      std_msgs::Float64 data_msg;
+      std_msgs::msg::Float64 data_msg;
       data_msg.data = values[i];
-      data_pubs_[i].publish(data_msg);
+      data_pubs_[i]->publish(data_msg);
     }
 
-    ROS_INFO("Published: %s", msg.data.c_str());
+    RCLCPP_INFO(this->get_logger(), "Published: %s", msg.data.c_str());
   }
 
   /**
@@ -319,7 +336,7 @@ private:
     }
     else
     {
-      throw std::runtime_error("Unsupported baud rate: " + to_string(baud_rate));
+      throw std::runtime_error("Unsupported baud rate: " + std::to_string(baud_rate));
     }
   }
 };
@@ -331,17 +348,17 @@ int main(int argc, char **argv)
 {
   try
   {
-    ros::init(argc, argv, "serial_to_ros");
-    ros::NodeHandle nh("~");
-
-    SerialToRosBridge bridge(nh);
-    bridge.run();
+    rclcpp::init(argc, argv);
+    auto bridge = std::make_shared<SerialToRosBridge>();
+    bridge->run();
+    rclcpp::shutdown();
 
     return EXIT_SUCCESS;
   }
   catch (const std::exception &e)
   {
-    ROS_FATAL("Fatal error: %s", e.what());
+    RCLCPP_FATAL(rclcpp::get_logger("serial_to_ros"), "Fatal error: %s", e.what());
+    rclcpp::shutdown();
     return EXIT_FAILURE;
   }
 }

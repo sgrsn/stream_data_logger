@@ -1,30 +1,31 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.8)
 project(serial_stream)
 
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  std_msgs
-)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(libserial)
-find_package(PkgConfig)
-pkg_check_modules(SERIAL libserial)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_path(LIBSERIAL_INCLUDE_DIR libserial/SerialStream.h)
+find_library(LIBSERIAL_LIBRARY NAMES serial)
 
-catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES serial_stream
-  CATKIN_DEPENDS roscpp std_msgs
-)
-
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-  ${LibSerial_INCLUDE_DIRS}
-)
+if(NOT LIBSERIAL_INCLUDE_DIR OR NOT LIBSERIAL_LIBRARY)
+  message(FATAL_ERROR "libserial headers or library not found")
+endif()
 
 add_executable(${PROJECT_NAME}_node src/serial_stream_node.cpp)
 
-target_link_libraries(${PROJECT_NAME}_node
-  ${catkin_LIBRARIES}
-  ${SERIAL_LIBRARIES}
+target_include_directories(${PROJECT_NAME}_node PRIVATE ${LIBSERIAL_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME}_node ${LIBSERIAL_LIBRARY})
+ament_target_dependencies(${PROJECT_NAME}_node rclcpp std_msgs)
+
+install(TARGETS ${PROJECT_NAME}_node
+  DESTINATION lib/${PROJECT_NAME}
 )
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
+ament_package()
